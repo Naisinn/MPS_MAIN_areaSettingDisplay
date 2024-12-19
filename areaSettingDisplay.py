@@ -69,7 +69,7 @@ datasets = {
 region_colors = {
     "AAA": "#1f77b4",  # 青
     "BBB": "#ff7f0e",  # オレンジ
-    "CCC": "#2ca02c",  # 緑
+    "CCC": "#d62728",  # 赤（視認性向上のため変更）
 }
 
 # データセットごとの透明度
@@ -81,6 +81,8 @@ dataset_alpha = {
 def create_box(ax, limits, color, label, alpha):
     """
     指定された範囲でボックスを作成し、3Dプロットに追加します。
+    文字サイズをボックスのサイズに基づいて動的に調整します。
+    CCC領域の場合は視認性を向上させるためにエッジを強調します。
     """
     x_min = limits["domain_lowerLimitOfX(m)"]
     x_max = limits["domain_upperLimitOfX(m)"]
@@ -111,10 +113,25 @@ def create_box(ax, limits, color, label, alpha):
         [vertices[4], vertices[7], vertices[3], vertices[0]],  # 左側面
     ]
 
-    box = Poly3DCollection(faces, linewidths=1.5, edgecolors='k')  # 輪郭線を太く設定
+    # 輪郭線の強調
+    if label == "CCC":
+        linewidth = 2.5
+        edgecolor = 'black'
+    else:
+        linewidth = 1.5
+        edgecolor = 'k'
+
+    box = Poly3DCollection(faces, linewidths=linewidth, edgecolors=edgecolor)
     box.set_facecolor(color)
     box.set_alpha(alpha)  # 各領域ごとの透明度設定
     ax.add_collection3d(box)
+
+    # ボックスのサイズに基づいてフォントサイズを調整
+    box_size = max(x_max - x_min, y_max - y_min, z_max - z_min)
+    base_font_size = 8
+    # スケーリングファクターを調整して適切なフォントサイズに
+    font_size = base_font_size * (box_size / 1.0)
+    font_size = max(8, min(font_size, 12))  # フォントサイズを8から12の間に制限
 
     # テキストの配置（ボックスの中心）
     center_x = (x_min + x_max) / 2
@@ -126,13 +143,36 @@ def create_box(ax, limits, color, label, alpha):
         f"Y: [{y_min}, {y_max}]\n"
         f"Z: [{z_min}, {z_max}]"
     )
-    ax.text(center_x, center_y, z_max, annotation, color='black', fontsize=8, ha='center', zorder=10)
+    # テキストの配置位置を調整（z_maxの少し上に表示）
+    ax.text(center_x, center_y, z_max + (0.05 * box_size), annotation,
+            color='black', fontsize=font_size, ha='center', zorder=10)
+
+# 全データセットの全軸範囲を計算してスケールを統一
+all_x = []
+all_y = []
+all_z = []
+for dataset in datasets.values():
+    for limits in dataset.values():
+        all_x.extend([limits["domain_lowerLimitOfX(m)"], limits["domain_upperLimitOfX(m)"]])
+        all_y.extend([limits["domain_lowerLimitOfY(m)"], limits["domain_upperLimitOfY(m)"]])
+        all_z.extend([limits["domain_lowerLimitOfZ(m)"], limits["domain_upperLimitOfZ(m)"]])
+
+x_min_global = min(all_x) - 1
+x_max_global = max(all_x) + 1
+y_min_global = min(all_y) - 1
+y_max_global = max(all_y) + 1
+z_min_global = min(all_z) - 1
+z_max_global = max(all_z) + 1
 
 # プロットの生成と保存
-for dataset_name, regions in datasets.items():
-    # プロットのセットアップ
-    fig = plt.figure(figsize=(14, 10))
-    ax = fig.add_subplot(111, projection='3d')
+# 横並びに2つのサブプロットを作成
+fig = plt.figure(figsize=(28, 12))  # 横に広い図を作成
+
+# サブプロットの位置を指定
+axes = []
+for i, (dataset_name, regions) in enumerate(datasets.items(), 1):
+    ax = fig.add_subplot(1, 2, i, projection='3d')
+    axes.append(ax)
 
     # プロット順序を指定（大きい領域から小さい領域へ）
     plot_order = ["AAA", "BBB", "CCC"]
@@ -145,45 +185,41 @@ for dataset_name, regions in datasets.items():
             create_box(ax, limits, color, region, alpha)
 
     # 軸ラベルの設定
-    ax.set_xlabel('X (m)', fontsize=12)
-    ax.set_ylabel('Y (m)', fontsize=12)
-    ax.set_zlabel('Z (m)', fontsize=12)
+    ax.set_xlabel('X (m)', fontsize=14)
+    ax.set_ylabel('Y (m)', fontsize=14)
+    ax.set_zlabel('Z (m)', fontsize=14)
 
     # タイトルの設定
-    ax.set_title(f'{dataset_name} の領域表示', fontsize=15)
+    ax.set_title(f'{dataset_name} の領域表示', fontsize=18)
 
-    # 凡例の作成
-    patches = [mpatches.Patch(color=region_colors[region], label=region) for region in plot_order]
-    ax.legend(handles=patches, loc='upper left')
+    # 凡例の作成（最初のサブプロットでのみ作成）
+    if i == 1:
+        patches = [mpatches.Patch(color=region_colors[region], label=region) for region in plot_order]
+        ax.legend(handles=patches, loc='upper left', fontsize=12)
 
-    # 軸の範囲を自動調整
-    all_x = []
-    all_y = []
-    all_z = []
-    for limits in regions.values():
-        all_x.extend([limits["domain_lowerLimitOfX(m)"], limits["domain_upperLimitOfX(m)"]])
-        all_y.extend([limits["domain_lowerLimitOfY(m)"], limits["domain_upperLimitOfY(m)"]])
-        all_z.extend([limits["domain_lowerLimitOfZ(m)"], limits["domain_upperLimitOfZ(m)"]])
-
-    ax.set_xlim(min(all_x) - 1, max(all_x) + 1)
-    ax.set_ylim(min(all_y) - 1, max(all_y) + 1)
-    ax.set_zlim(min(all_z) - 1, max(all_z) + 1)
+    # 軸の範囲を統一
+    ax.set_xlim(x_min_global, x_max_global)
+    ax.set_ylim(y_min_global, y_max_global)
+    ax.set_zlim(z_min_global, z_max_global)
 
     # グリッドの表示
-    ax.grid(True)
+    ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
 
-    # ビューポイントの設定（視点を調整して重なりを減らす）
+    # ビューポイントの設定（視点を統一）
     ax.view_init(elev=20, azim=30)  # 仰角20度、方位角30度
 
-    # ファイル名の設定（実行ディレクトリに保存）
-    filename = f"{dataset_name}.png"
-    filepath = os.path.join(os.getcwd(), filename)
+# レイアウトの調整
+plt.tight_layout()
 
-    # 画像の保存
-    plt.savefig(filepath, dpi=300, bbox_inches='tight')
-    print(f"{filename} を保存しました。")
+# ファイル名の設定（実行ディレクトリに保存）
+filename = "combined_datasets.png"
+filepath = os.path.join(os.getcwd(), filename)
 
-    # プロットを閉じてメモリを解放
-    plt.close(fig)
+# 画像の保存
+plt.savefig(filepath, dpi=300, bbox_inches='tight')
+print(f"{filename} を保存しました。")
 
-print("全ての画像の保存が完了しました。")
+# プロットを閉じてメモリを解放
+plt.close(fig)
+
+print("画像の保存が完了しました。")
