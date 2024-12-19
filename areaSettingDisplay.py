@@ -1,9 +1,30 @@
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import matplotlib.patches as mpatches
+import matplotlib.font_manager as fm
 import os
 
-# 定義されたデータ
+# 日本語フォントの設定
+def set_japanese_font():
+    # フォント名を指定
+    font_name = 'Noto Sans JP'
+    # フォントパスを取得
+    font_paths = [f.fname for f in fm.fontManager.ttflist if font_name in f.name]
+    
+    if font_paths:
+        # フォントが見つかった場合、最初のパスを使用
+        font_path = font_paths[0]
+        fm.fontManager.addfont(font_path)
+        plt.rcParams['font.family'] = font_name
+        print(f"日本語フォント '{font_name}' を使用します。")
+    else:
+        # フォントが見つからない場合、デフォルトのフォントを使用
+        plt.rcParams['font.family'] = 'sans-serif'
+        print(f"指定した日本語フォント '{font_name}' が見つかりません。デフォルトのフォントを使用します。")
+
+set_japanese_font()
+
+# データセット定義
 datasets = {
     "05_LambdaByLIs1.0_lowReso_smooth": {
         "AAA": {
@@ -48,10 +69,10 @@ datasets = {
             "distanceBetweenParticles(m)": 0.015,
             "domain_lowerLimitOfX(m)": -1.5,
             "domain_lowerLimitOfY(m)": -0.9,
-            "domain_lowerLimitOfZ(m)": -0.7,
+            "domain_lowerLimitOfZ(m)": -1.4,
             "domain_upperLimitOfX(m)": 1.5,
             "domain_upperLimitOfY(m)": 1.0,
-            "domain_upperLimitOfZ(m)": 0.7,
+            "domain_upperLimitOfZ(m)": 1.4,
         },
         "CCC": {
             "distanceBetweenParticles(m)": 0.0075,
@@ -80,10 +101,15 @@ dataset_alpha = {
 
 def create_box(ax, limits, color, label, alpha):
     """
-    指定された範囲でボックスを作成し、3Dプロットに追加します。
-    文字サイズをボックスのサイズに基づいて動的に調整します。
-    CCC領域の場合は視認性を向上させるためにエッジを強調します。
+    元データ: X, Y, Z
+    表示時は (X, Z, Y) でプロットする:
+      - プロットのX軸 <- 元X
+      - プロットのY軸 <- 元Z
+      - プロットのZ軸 <- 元Y
+
+    これで表示上はY軸が垂直方向として機能します。
     """
+    # 元データ
     x_min = limits["domain_lowerLimitOfX(m)"]
     x_max = limits["domain_upperLimitOfX(m)"]
     y_min = limits["domain_lowerLimitOfY(m)"]
@@ -91,16 +117,21 @@ def create_box(ax, limits, color, label, alpha):
     z_min = limits["domain_lowerLimitOfZ(m)"]
     z_max = limits["domain_upperLimitOfZ(m)"]
 
-    # ボックスの8頂点
+    # 表示データに変換 (X, Z, Y)
+    X_coords = [x_min, x_max]
+    Y_coords = [z_min, z_max]  # 元ZがプロットYへ
+    Z_coords = [y_min, y_max]  # 元YがプロットZへ
+
+    # ボックスの8頂点を定義
     vertices = [
-        [x_min, y_min, z_min],
-        [x_max, y_min, z_min],
-        [x_max, y_max, z_min],
-        [x_min, y_max, z_min],
-        [x_min, y_min, z_max],
-        [x_max, y_min, z_max],
-        [x_max, y_max, z_max],
-        [x_min, y_max, z_max]
+        [X_coords[0], Y_coords[0], Z_coords[0]],
+        [X_coords[1], Y_coords[0], Z_coords[0]],
+        [X_coords[1], Y_coords[1], Z_coords[0]],
+        [X_coords[0], Y_coords[1], Z_coords[0]],
+        [X_coords[0], Y_coords[0], Z_coords[1]],
+        [X_coords[1], Y_coords[0], Z_coords[1]],
+        [X_coords[1], Y_coords[1], Z_coords[1]],
+        [X_coords[0], Y_coords[1], Z_coords[1]]
     ]
 
     # ボックスの6面を定義
@@ -123,40 +154,54 @@ def create_box(ax, limits, color, label, alpha):
 
     box = Poly3DCollection(faces, linewidths=linewidth, edgecolors=edgecolor)
     box.set_facecolor(color)
-    box.set_alpha(alpha)  # 各領域ごとの透明度設定
+    box.set_alpha(alpha)
     ax.add_collection3d(box)
 
-    # ボックスのサイズに基づいてフォントサイズを調整
-    box_size = max(x_max - x_min, y_max - y_min, z_max - z_min)
+    # 注釈のフォントサイズと配置
+    box_size = max((x_max - x_min), (Y_coords[1] - Y_coords[0]), (Z_coords[1] - Z_coords[0]))
     base_font_size = 8
-    # スケーリングファクターを調整して適切なフォントサイズに
-    font_size = base_font_size * (box_size / 1.0)
-    font_size = max(8, min(font_size, 12))  # フォントサイズを8から12の間に制限
+    font_size = max(8, min(base_font_size * (box_size / 1.0), 12))
 
-    # テキストの配置（ボックスの中心）
+    # ボックスの中心
     center_x = (x_min + x_max) / 2
-    center_y = (y_min + y_max) / 2
+    center_y = (Y_coords[0] + Y_coords[1]) / 2
     center_z = (z_min + z_max) / 2
+
+    # テキストのオフセットを調整して重なりを防止
+    if label == "CCC":
+        text_offset = 0.1 * box_size
+    else:
+        text_offset = 0.05 * box_size
+
     annotation = (
         f"{label}\n"
         f"X: [{x_min}, {x_max}]\n"
         f"Y: [{y_min}, {y_max}]\n"
         f"Z: [{z_min}, {z_max}]"
     )
-    # テキストの配置位置を調整（z_maxの少し上に表示）
-    ax.text(center_x, center_y, z_max + (0.05 * box_size), annotation,
-            color='black', fontsize=font_size, ha='center', zorder=10)
 
-# 全データセットの全軸範囲を計算してスケールを統一
-all_x = []
-all_y = []
-all_z = []
+    # テキストをボックスの上に配置し、オフセットを適用
+    ax.text(center_x, Y_coords[1] + text_offset, center_z, annotation,
+            color='black', fontsize=font_size, ha='center', zorder=10,
+            bbox=dict(facecolor='white', alpha=0.6, edgecolor='none'))
+
+# 軸範囲計算
+all_x, all_y, all_z = [], [], []
 for dataset in datasets.values():
     for limits in dataset.values():
-        all_x.extend([limits["domain_lowerLimitOfX(m)"], limits["domain_upperLimitOfX(m)"]])
-        all_y.extend([limits["domain_lowerLimitOfY(m)"], limits["domain_upperLimitOfY(m)"]])
-        all_z.extend([limits["domain_lowerLimitOfZ(m)"], limits["domain_upperLimitOfZ(m)"]])
+        x_min = limits["domain_lowerLimitOfX(m)"]
+        x_max = limits["domain_upperLimitOfX(m)"]
+        y_min = limits["domain_lowerLimitOfY(m)"]
+        y_max = limits["domain_upperLimitOfY(m)"]
+        z_min = limits["domain_lowerLimitOfZ(m)"]
+        z_max = limits["domain_upperLimitOfZ(m)"]
 
+        # 表示データに変換 (X, Z, Y)
+        all_x.extend([x_min, x_max])
+        all_y.extend([z_min, z_max])  # 元ZがプロットYへ
+        all_z.extend([y_min, y_max])  # 元YがプロットZへ
+
+# 軸範囲を統一
 x_min_global = min(all_x) - 1
 x_max_global = max(all_x) + 1
 y_min_global = min(all_y) - 1
@@ -165,14 +210,10 @@ z_min_global = min(all_z) - 1
 z_max_global = max(all_z) + 1
 
 # プロットの生成と保存
-# 横並びに2つのサブプロットを作成
 fig = plt.figure(figsize=(28, 12))  # 横に広い図を作成
 
-# サブプロットの位置を指定
-axes = []
 for i, (dataset_name, regions) in enumerate(datasets.items(), 1):
     ax = fig.add_subplot(1, 2, i, projection='3d')
-    axes.append(ax)
 
     # プロット順序を指定（大きい領域から小さい領域へ）
     plot_order = ["AAA", "BBB", "CCC"]
@@ -186,15 +227,15 @@ for i, (dataset_name, regions) in enumerate(datasets.items(), 1):
 
     # 軸ラベルの設定
     ax.set_xlabel('X (m)', fontsize=14)
-    ax.set_ylabel('Y (m)', fontsize=14)
-    ax.set_zlabel('Z (m)', fontsize=14)
+    ax.set_ylabel('Z (m)', fontsize=14)  # 元ZがプロットYへ
+    ax.set_zlabel('Y (m) (垂直)', fontsize=14)  # 元YがプロットZへ、垂直方向
 
     # タイトルの設定
     ax.set_title(f'{dataset_name} の領域表示', fontsize=18)
 
     # 凡例の作成（最初のサブプロットでのみ作成）
     if i == 1:
-        patches = [mpatches.Patch(color=region_colors[region], label=region) for region in plot_order]
+        patches = [mpatches.Patch(color=region_colors[r], label=r) for r in plot_order]
         ax.legend(handles=patches, loc='upper left', fontsize=12)
 
     # 軸の範囲を統一
